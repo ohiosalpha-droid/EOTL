@@ -24,8 +24,10 @@ UPLOADS_DIR = DATA_DIR / "uploads"
 for d in (IMAGES_DIR, UPLOADS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-CHAT_MODEL = os.getenv("EOTL_CHAT_MODEL", "gpt-4o")
-IMAGE_MODEL = os.getenv("EOTL_IMAGE_MODEL", "gpt-image-1")
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+USE_GEMINI = not os.getenv("OPENAI_API_KEY") and bool(os.getenv("GEMINI_API_KEY"))
+CHAT_MODEL = os.getenv("EOTL_CHAT_MODEL", "gemini-2.5-flash" if USE_GEMINI else "gpt-4o")
+IMAGE_MODEL = os.getenv("EOTL_IMAGE_MODEL", "imagen-3.0-generate-002" if USE_GEMINI else "gpt-image-1")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_UPLOAD_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
@@ -239,10 +241,12 @@ async def me(request: Request):
 
 
 def get_client() -> AsyncOpenAI:
+    if USE_GEMINI:
+        return AsyncOpenAI(api_key=os.environ["GEMINI_API_KEY"], base_url=GEMINI_BASE_URL)
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(
             status_code=503,
-            detail="Kein OPENAI_API_KEY gesetzt. Bitte in der Datei .env eintragen.",
+            detail="Kein API-Key gesetzt. Bitte OPENAI_API_KEY oder GEMINI_API_KEY in der Datei .env eintragen.",
         )
     return AsyncOpenAI()
 
@@ -290,7 +294,11 @@ def _to_openai_message(msg: Message) -> dict:
 async def generate_image(client: AsyncOpenAI, prompt: str, size: str) -> str:
     if size not in {"1024x1024", "1536x1024", "1024x1536"}:
         size = "1024x1024"
-    if IMAGE_MODEL.startswith("dall-e-3"):
+    if IMAGE_MODEL.startswith("imagen"):
+        result = await client.images.generate(
+            model=IMAGE_MODEL, prompt=prompt, response_format="b64_json", n=1
+        )
+    elif IMAGE_MODEL.startswith("dall-e-3"):
         size = {"1536x1024": "1792x1024", "1024x1536": "1024x1792"}.get(size, size)
         result = await client.images.generate(
             model=IMAGE_MODEL, prompt=prompt, size=size, response_format="b64_json"
@@ -376,7 +384,7 @@ async def upload(file: UploadFile = File(...)):
 @app.get("/api/status")
 async def status():
     return {
-        "key_gesetzt": bool(os.getenv("OPENAI_API_KEY")),
+        "key_gesetzt": bool(os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")),
         "chat_modell": CHAT_MODEL,
         "bild_modell": IMAGE_MODEL,
     }
