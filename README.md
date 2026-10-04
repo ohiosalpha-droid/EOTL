@@ -4,7 +4,8 @@ EOTL ist eine Web-App mit grün-schwarzem Design, die
 - **chattet** (Antworten werden live gestreamt, Verlauf bleibt im Browser gespeichert),
 - **programmiert** (Coder-Modus, Syntax-Highlighting, Kopieren-Button),
 - **Bilder erstellt** (Bild-Modus oder einfach im Chat „Mach mir ein Bild von …“),
-- **Bilder versteht** (📎 Bild anhängen und Fragen dazu stellen).
+- **Bilder versteht** (Bild über die Büroklammer anhängen und Fragen dazu stellen),
+- **Projekte** verwaltet (eigene Anweisungen, die für alle Chats im Projekt gelten).
 
 Im Hintergrund nutzt EOTL die OpenAI-API (Standard: `gpt-4o` für den Chat, `gpt-image-1` für Bilder).
 

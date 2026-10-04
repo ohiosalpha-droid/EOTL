@@ -31,7 +31,8 @@ BASE_PROMPT = (
     "freundlich, klar und präzise. Du kannst normale Gespräche führen, Fragen beantworten, "
     "Bilder analysieren, die der Nutzer hochlädt, und mit dem Werkzeug `bild_erstellen` neue "
     "Bilder generieren, wenn der Nutzer ein Bild, eine Grafik, ein Logo oder Ähnliches möchte. "
-    "Formatiere Antworten mit Markdown. Code steht immer in Codeblöcken mit Sprachangabe."
+    "Formatiere Antworten mit Markdown. Code steht immer in Codeblöcken mit Sprachangabe. "
+    "Verwende keine Emojis."
 )
 
 MODE_PROMPTS = {
@@ -88,6 +89,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[Message]
     mode: str = "chat"
+    instructions: str = ""
 
 
 class ImageRequest(BaseModel):
@@ -141,6 +143,8 @@ def sse(event: dict) -> str:
 async def chat(req: ChatRequest):
     client = get_client()
     system = MODE_PROMPTS.get(req.mode, BASE_PROMPT)
+    if req.instructions.strip():
+        system += "\n\nProjekt-Anweisungen des Nutzers:\n" + req.instructions.strip()[:8000]
     messages = [{"role": "system", "content": system}] + [
         _to_openai_message(m) for m in req.messages[-40:]
     ]
