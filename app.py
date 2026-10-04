@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import mimetypes
@@ -5,10 +6,10 @@ import os
 import secrets
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
-from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -78,47 +79,9 @@ app = FastAPI(title="EOTL")
 
 # ---------- Anmeldung ----------
 
-PROVIDERS = {
-    "google": {
-        "label": "Google",
-        "server_metadata_url": os.getenv(
-            "EOTL_GOOGLE_METADATA_URL",
-            "https://accounts.google.com/.well-known/openid-configuration",
-        ),
-        "client_kwargs": {"scope": "openid email profile"},
-    },
-    "github": {
-        "label": "GitHub",
-        "authorize_url": "https://github.com/login/oauth/authorize",
-        "access_token_url": "https://github.com/login/oauth/access_token",
-        "api_base_url": "https://api.github.com/",
-        "client_kwargs": {"scope": "read:user user:email"},
-    },
-    "microsoft": {
-        "label": "Microsoft",
-        "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-        "access_token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-        "api_base_url": "https://graph.microsoft.com/v1.0/",
-        "client_kwargs": {"scope": "User.Read"},
-    },
-}
-
-oauth = OAuth()
-ENABLED_PROVIDERS: dict[str, str] = {}
-for _name, _cfg in PROVIDERS.items():
-    _id = os.getenv(f"{_name.upper()}_CLIENT_ID")
-    _secret = os.getenv(f"{_name.upper()}_CLIENT_SECRET")
-    if _id and _secret:
-        _kwargs = {k: v for k, v in _cfg.items() if k != "label"}
-        oauth.register(_name, client_id=_id, client_secret=_secret, **_kwargs)
-        ENABLED_PROVIDERS[_name] = _cfg["label"]
-
-DEMO_LOGIN = os.getenv("EOTL_DEMO_LOGIN", "").lower() in {"1", "true", "ja"}
-ALLOWED_EMAILS = {
-    e.strip().lower() for e in os.getenv("EOTL_ALLOWED_EMAILS", "").split(",") if e.strip()
-}
+ACCESS_CODE = os.getenv("EOTL_ZUGANGSCODE", "").strip()
 BASE_URL = os.getenv("EOTL_BASE_URL", "").rstrip("/")
-PUBLIC_PREFIXES = ("/login", "/auth/", "/static/", "/api/auth/")
+PUBLIC_PREFIXES = ("/login", "/static/")
 
 
 def _session_secret() -> str:
@@ -152,12 +115,7 @@ app.add_middleware(
 
 
 def _login_error(text: str) -> RedirectResponse:
-    return RedirectResponse(f"/login?fehler={text}")
-
-
-@app.get("/api/auth/anbieter")
-async def auth_providers():
-    return {"anbieter": ENABLED_PROVIDERS, "demo": DEMO_LOGIN}
+    return RedirectResponse(f"/login?fehler={quote(text)}", status_code=303)
 
 
 @app.get("/login")
@@ -167,67 +125,18 @@ async def login_page(request: Request):
     return FileResponse(BASE_DIR / "static" / "login.html")
 
 
-@app.get("/auth/demo")
-async def auth_demo(request: Request):
-    if not DEMO_LOGIN:
-        raise HTTPException(status_code=404)
-    request.session["user"] = {
-        "id": "demo:1", "name": "Demo-Nutzer", "email": "demo@eotl.local", "bild": "", "anbieter": "demo",
-    }
-    return RedirectResponse("/")
-
-
-@app.get("/auth/{provider}")
-async def auth_start(provider: str, request: Request):
-    client = oauth.create_client(provider) if provider in ENABLED_PROVIDERS else None
-    if not client:
-        raise HTTPException(status_code=404, detail="Unbekannter Anmeldeanbieter.")
-    redirect_uri = (
-        f"{BASE_URL}/auth/{provider}/callback"
-        if BASE_URL
-        else str(request.url_for("auth_callback", provider=provider))
-    )
-    return await client.authorize_redirect(request, redirect_uri)
-
-
-async def _fetch_user(provider: str, client, token: dict) -> dict:
-    if provider == "google":
-        info = token.get("userinfo") or await client.userinfo(token=token)
-        return {"sub": info["sub"], "name": info.get("name"), "email": info.get("email"),
-                "bild": info.get("picture", ""), "verified": info.get("email_verified", False)}
-    if provider == "github":
-        info = (await client.get("user", token=token)).json()
-        emails = (await client.get("user/emails", token=token)).json()
-        primary = next((e for e in emails if isinstance(e, dict) and e.get("primary")), {})
-        return {"sub": str(info["id"]), "name": info.get("name") or info.get("login"),
-                "email": primary.get("email") or info.get("email"),
-                "bild": info.get("avatar_url", ""), "verified": primary.get("verified", False)}
-    info = (await client.get("me", token=token)).json()
-    return {"sub": info["id"], "name": info.get("displayName"),
-            "email": info.get("mail") or info.get("userPrincipalName"), "bild": "", "verified": True}
-
-
-@app.get("/auth/{provider}/callback", name="auth_callback")
-async def auth_callback(provider: str, request: Request):
-    client = oauth.create_client(provider) if provider in ENABLED_PROVIDERS else None
-    if not client:
-        raise HTTPException(status_code=404, detail="Unbekannter Anmeldeanbieter.")
-    try:
-        token = await client.authorize_access_token(request)
-        info = await _fetch_user(provider, client, token)
-    except Exception:  # noqa: BLE001
-        return _login_error("Anmeldung fehlgeschlagen. Bitte erneut versuchen.")
-    email = (info.get("email") or "").lower()
-    if ALLOWED_EMAILS and (email not in ALLOWED_EMAILS or not info.get("verified")):
-        return _login_error("Dieses Konto ist für EOTL nicht freigeschaltet.")
-    request.session["user"] = {
-        "id": f"{provider}:{info['sub']}",
-        "name": info.get("name") or email or "Nutzer",
-        "email": email,
-        "bild": info.get("bild") or "",
-        "anbieter": provider,
-    }
-    return RedirectResponse("/")
+@app.post("/login")
+async def login(request: Request, name: str = Form(""), code: str = Form("")):
+    name = " ".join(name.split())[:40]
+    if not ACCESS_CODE:
+        return _login_error("Es ist noch kein Zugangscode eingerichtet (EOTL_ZUGANGSCODE in der Datei .env).")
+    if not name:
+        return _login_error("Bitte gib deinen Namen ein.")
+    if not secrets.compare_digest(code.strip().encode(), ACCESS_CODE.encode()):
+        await asyncio.sleep(1)
+        return _login_error("Der Zugangscode ist falsch.")
+    request.session["user"] = {"id": f"name:{name.lower()}", "name": name, "email": "", "bild": ""}
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/logout")

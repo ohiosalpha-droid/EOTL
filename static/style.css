@@ -325,7 +325,11 @@ body.login-page { display: grid; place-items: center; overflow: auto; }
 .login-card .spark.big { display: block; margin: 0 auto; animation: spin-in 1.2s var(--ease); }
 .login-card h1 { font-family: var(--serif); font-weight: 400; font-size: 30px; margin: 14px 0 6px; }
 .login-card > p.muted { margin: 0 0 24px; line-height: 1.5; }
-#providers { display: flex; flex-direction: column; gap: 10px; }
+.login-form { display: flex; flex-direction: column; gap: 10px; }
+.login-form input { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); font: inherit; outline: none; transition: border-color .2s, box-shadow .25s; animation: rise .5s var(--ease) backwards; }
+.login-form input:focus { border-color: rgba(52, 232, 154, .55); box-shadow: 0 0 0 4px var(--green-soft); }
+.login-form .provider-btn { cursor: pointer; font: inherit; font-weight: 600; background: var(--green); color: #04130b; border-color: transparent; }
+.login-form .provider-btn:hover { background: var(--green); filter: brightness(1.08); }
 .provider-btn { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 16px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); text-decoration: none; font-weight: 500; transition: border-color .2s, box-shadow .25s, transform .15s, background .2s; animation: rise .5s var(--ease) backwards; }
 .provider-btn:hover { border-color: rgba(52, 232, 154, .55); box-shadow: 0 0 0 4px var(--green-soft); transform: translateY(-1px); background: var(--surface); }
 .provider-btn svg { width: 20px; height: 20px; }
