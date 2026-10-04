@@ -22,6 +22,9 @@
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18 9 12l6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" /></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" /></symbol>
     <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Zm0 16a2 2 0 0 1 2-2h13v2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none" /></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" /></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"><rect x="7" y="7" width="10" height="13" rx="5" /><path d="M9 7a3 3 0 0 1 6 0M12 12v8M3 13h4M17 13h4M4 7l3 2M20 7l-3 2M4 20l3-2M20 20l-3-2" /></g></symbol>
+    <symbol id="i-test" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" /></symbol>
     <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" /></symbol>
   </svg>
 
@@ -33,6 +36,7 @@
 
     <button class="nav nav-new" id="new-chat"><span class="nav-ico new-ico"><svg><use href="#i-plus" /></svg></span>Neuer Chat</button>
     <nav>
+      <button class="nav" data-view="code"><span class="nav-ico"><svg><use href="#i-code" /></svg></span>Code</button>
       <button class="nav" data-view="chats"><span class="nav-ico"><svg><use href="#i-chat" /></svg></span>Chats</button>
       <button class="nav" data-view="projekte"><span class="nav-ico"><svg><use href="#i-folder" /></svg></span>Projekte</button>
       <button class="nav" data-view="bilder"><span class="nav-ico"><svg><use href="#i-image" /></svg></span>Bilder erstellen</button>
@@ -41,7 +45,14 @@
     <div class="section-title">Zuletzt</div>
     <ul id="recent"></ul>
 
-    <div class="sb-foot" id="status"></div>
+    <div class="sb-foot">
+      <div class="status" id="status"></div>
+      <div class="user-row">
+        <div class="avatar" id="user-avatar"></div>
+        <div class="user-info"><div class="user-name" id="user-name"></div><div class="user-mail" id="user-mail"></div></div>
+        <a class="icon-btn" href="/logout" title="Abmelden"><svg><use href="#i-logout" /></svg></a>
+      </div>
+    </div>
   </aside>
 
   <main>
@@ -77,12 +88,39 @@
       </form>
 
       <div class="chips" id="chips">
-        <button data-text="Schreib mir Code für "><svg><use href="#i-code" /></svg>Programmieren</button>
+        <button data-view="code"><svg><use href="#i-code" /></svg>Programmieren</button>
         <button data-view="bilder"><svg><use href="#i-image" /></svg>Bild erstellen</button>
         <button data-text="Erklär mir einfach: "><svg><use href="#i-book" /></svg>Erklären</button>
         <button data-text="Gib mir kreative Ideen für "><svg><use href="#i-bulb" /></svg>Ideen sammeln</button>
       </div>
       <div class="hint">EOTL kann Fehler machen. Wichtige Informationen bitte prüfen.</div>
+    </section>
+
+    <!-- Code -->
+    <section class="view page" id="view-code">
+      <div class="code-home">
+        <div class="code-hero">
+          <div class="code-badge"><svg><use href="#i-code" /></svg></div>
+          <h2>Was programmieren wir heute?</h2>
+          <p class="muted">EOTL schreibt, erklärt und verbessert Code in jeder gängigen Sprache.</p>
+        </div>
+        <form id="code-composer" class="composer">
+          <textarea id="code-input" rows="3" placeholder="Beschreibe, was du bauen möchtest, oder füge Code ein …"></textarea>
+          <div class="composer-bar">
+            <span class="mode-tag"><svg><use href="#i-code" /></svg>Coder-Modus</span>
+            <span class="spacer"></span>
+            <button type="submit" class="send-btn" id="code-send" title="Senden" disabled><svg><use href="#i-up" /></svg></button>
+          </div>
+        </form>
+        <div class="chips" id="code-chips">
+          <button data-text="Bau mir eine Web-App, die "><svg><use href="#i-code" /></svg>Neue App</button>
+          <button data-text="Finde den Fehler in diesem Code:&#10;&#10;"><svg><use href="#i-bug" /></svg>Fehler finden</button>
+          <button data-text="Erklär mir Schritt für Schritt, was dieser Code macht:&#10;&#10;"><svg><use href="#i-book" /></svg>Code erklären</button>
+          <button data-text="Schreib Tests für diesen Code:&#10;&#10;"><svg><use href="#i-test" /></svg>Tests schreiben</button>
+        </div>
+        <h3>Deine Code-Chats</h3>
+        <div id="code-chats" class="rows"></div>
+      </div>
     </section>
 
     <!-- Chats -->
@@ -173,6 +211,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <!--EOTL_USER-->
   <script src="/static/app.js"></script>
 </body>
 </html>

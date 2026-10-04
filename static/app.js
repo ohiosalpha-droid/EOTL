@@ -17,18 +17,29 @@ const ICONS = {
 const load = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
 };
-let chats = load("eotl-chats", []);
-let projects = load("eotl-projects", []);
-let images = load("eotl-images", []);
-chats.forEach((c) => { c.projectId ??= null; c.updated ??= Date.now(); });
+const USER = window.EOTL_USER || { id: "gast", name: "Gast", email: "" };
+const key = (name) => `eotl-${name}:${USER.id}`;
+let chats = load(key("chats"), []);
+let projects = load(key("projects"), []);
+let images = load(key("images"), []);
+chats.forEach((c) => { c.projectId ??= null; c.updated ??= Date.now(); c.mode ??= "chat"; });
 
 function persist() {
-  localStorage.setItem("eotl-chats", JSON.stringify(chats));
-  localStorage.setItem("eotl-projects", JSON.stringify(projects));
-  localStorage.setItem("eotl-images", JSON.stringify(images));
+  localStorage.setItem(key("chats"), JSON.stringify(chats));
+  localStorage.setItem(key("projects"), JSON.stringify(projects));
+  localStorage.setItem(key("images"), JSON.stringify(images));
 }
 
-const state = { view: "chat", chatId: null, draftProjectId: null, openProjectId: null, pendingImages: [], busy: false, imgBusy: false };
+async function api(url, options) {
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    location.href = "/login";
+    throw new Error("Bitte zuerst anmelden.");
+  }
+  return res;
+}
+
+const state = { view: "chat", chatId: null, draftProjectId: null, draftMode: "chat", openProjectId: null, pendingImages: [], busy: false, imgBusy: false };
 
 const messagesEl = $("#messages");
 const inputEl = $("#input");
@@ -117,8 +128,10 @@ function messageEl(msg, isLast) {
 function showView(view) {
   state.view = view;
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${view}`));
-  $$("#sidebar .nav[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  const navView = view === "chat" && chatMode() === "code" ? "code" : view;
+  $$("#sidebar .nav[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === navView));
   if (view === "chat") renderChat();
+  if (view === "code") renderCodeView();
   if (view === "chats") renderChatsView();
   if (view === "projekte") renderProjectsView();
   if (view === "bilder") renderGallery();
@@ -132,7 +145,8 @@ function renderTopbar() {
   const chat = currentChat();
   if (state.view !== "chat" || !chat || !chat.messages.length) { el.innerHTML = ""; return; }
   const p = projectById(chat.projectId);
-  el.innerHTML = (p ? `<span class="proj">${esc(p.name)} / </span>` : "") + esc(chat.title);
+  const prefix = [p?.name, chat.mode === "code" ? "Code" : null].filter(Boolean);
+  el.innerHTML = (prefix.length ? `<span class="proj">${prefix.map(esc).join(" / ")} / </span>` : "") + esc(chat.title);
 }
 
 function renderSidebar() {
@@ -142,7 +156,7 @@ function renderSidebar() {
   if (!recent.length) list.innerHTML = `<li class="empty">Noch keine Chats</li>`;
   for (const c of recent) {
     const li = document.createElement("li");
-    li.textContent = c.title;
+    li.innerHTML = (c.mode === "code" ? `<svg class="li-ico"><use href="#i-code" /></svg>` : "") + `<span>${esc(c.title)}</span>`;
     li.title = c.title;
     li.classList.toggle("active", state.view === "chat" && c.id === state.chatId);
     li.onclick = () => openChat(c.id);
@@ -154,7 +168,8 @@ function renderChat() {
   const chat = currentChat();
   const has = !!(chat && chat.messages.length);
   $("#view-chat").classList.toggle("empty", !has);
-  $("#greeting-text").textContent = greeting();
+  $("#greeting-text").textContent = chatMode() === "code" ? "Was programmieren wir heute?" : greeting();
+  $("#style-select").value = chatMode();
   const project = projectById(chat ? chat.projectId : state.draftProjectId);
   $("#project-badge").hidden = !project;
   if (project) $("#project-badge span").textContent = project.name;
@@ -173,9 +188,15 @@ function openChat(id) {
   inputEl.focus();
 }
 
-function newChat(projectId = null) {
+function chatMode() {
+  const chat = currentChat();
+  return chat ? chat.mode : state.draftMode;
+}
+
+function newChat(projectId = null, mode = "chat") {
   state.chatId = null;
   state.draftProjectId = projectId;
+  state.draftMode = mode;
   showView("chat");
   inputEl.focus();
 }
@@ -194,7 +215,7 @@ function chatRow(c, i) {
   row.className = "chat-row";
   row.style.animationDelay = `${Math.min(i, 12) * 25}ms`;
   row.innerHTML = `<div class="chat-row-main"><div class="chat-row-title">${esc(c.title)}</div>
-    <div class="chat-row-meta">${p ? esc(p.name) + " · " : ""}Zuletzt ${timeAgo(c.updated)}</div></div>
+    <div class="chat-row-meta">${c.mode === "code" ? "Code · " : ""}${p ? esc(p.name) + " · " : ""}Zuletzt ${timeAgo(c.updated)}</div></div>
     <button class="icon-btn danger" title="Löschen">${ICONS.trash}</button>`;
   row.onclick = (e) => (e.target.closest("button") ? deleteChat(c.id) : openChat(c.id));
   return row;
@@ -207,6 +228,18 @@ function renderChatsView() {
   $("#chats-count").textContent = `${chats.length} ${chats.length === 1 ? "Chat" : "Chats"}`;
   list.innerHTML = filtered.length ? "" : `<div class="empty-state">${q ? "Keine Chats gefunden." : "Noch keine Chats. Starte einen neuen Chat."}</div>`;
   filtered.forEach((c, i) => list.appendChild(chatRow(c, i)));
+}
+
+function renderCodeView() {
+  const list = $("#code-chats");
+  const cc = chats.filter((c) => c.mode === "code");
+  list.innerHTML = cc.length ? "" : `<div class="empty-state">Noch keine Code-Chats. Beschreibe oben dein erstes Vorhaben.</div>`;
+  cc.forEach((c, i) => list.appendChild(chatRow(c, i)));
+  updateCodeSend();
+}
+
+function updateCodeSend() {
+  $("#code-send").disabled = state.busy || !$("#code-input").value.trim();
 }
 
 function renderProjectsView() {
@@ -263,6 +296,7 @@ function renderGallery() {
 function setBusy(b) {
   state.busy = b;
   updateSendState();
+  updateCodeSend();
 }
 
 function updateSendState() {
@@ -285,10 +319,11 @@ async function send(text) {
   let chat = currentChat();
   if (!chat) {
     const title = (text || "Bildanalyse").replace(/\s+/g, " ");
-    chat = { id: uid(), title: title.length > 48 ? title.slice(0, 48) + " …" : title, projectId: state.draftProjectId, messages: [], updated: Date.now() };
+    chat = { id: uid(), title: title.length > 48 ? title.slice(0, 48) + " …" : title, projectId: state.draftProjectId, mode: state.draftMode, messages: [], updated: Date.now() };
     chats.unshift(chat);
     state.chatId = chat.id;
     state.draftProjectId = null;
+    state.draftMode = "chat";
   }
   chat.messages.push({ role: "user", content: text, images: state.pendingImages.map((p) => p.url) });
   state.pendingImages = [];
@@ -334,12 +369,12 @@ async function respond(chat) {
 
 async function streamChat(chat, bot, update) {
   const project = projectById(chat.projectId);
-  const res = await fetch("/api/chat", {
+  const res = await api("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: apiHistory(chat.messages.slice(0, -1).filter((m) => !m.errorText || m.content)),
-      mode: $("#style-select").value,
+      mode: chat.mode,
       instructions: project?.instructions || "",
     }),
   });
@@ -431,7 +466,7 @@ $("#file-input").addEventListener("change", async (e) => {
   if (!file) return;
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/upload", { method: "POST", body: form });
+  const res = await api("/api/upload", { method: "POST", body: form });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return alert(data.detail || "Upload fehlgeschlagen.");
   state.pendingImages.push({ url: data.url });
@@ -449,6 +484,38 @@ inputEl.addEventListener("keydown", (e) => {
   }
 });
 inputEl.addEventListener("input", autoResize);
+
+$("#style-select").addEventListener("change", (e) => {
+  const chat = currentChat();
+  if (chat) { chat.mode = e.target.value; persist(); } else state.draftMode = e.target.value;
+  showView("chat");
+});
+
+/* ---------- Code ---------- */
+const codeInput = $("#code-input");
+codeInput.addEventListener("input", () => {
+  codeInput.style.height = "auto";
+  codeInput.style.height = Math.min(codeInput.scrollHeight, 320) + "px";
+  updateCodeSend();
+});
+function sendCode() {
+  const text = codeInput.value.trim();
+  if (!text || state.busy) return;
+  codeInput.value = "";
+  newChat(null, "code");
+  send(text);
+}
+$("#code-composer").addEventListener("submit", (e) => { e.preventDefault(); sendCode(); });
+codeInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendCode(); }
+});
+$$("#code-chips button").forEach((b) => {
+  b.onclick = () => {
+    codeInput.value = b.dataset.text;
+    codeInput.dispatchEvent(new Event("input"));
+    codeInput.focus();
+  };
+});
 
 $$("#chips button").forEach((b) => {
   b.onclick = () => {
@@ -517,7 +584,7 @@ $("#img-form").addEventListener("submit", async (e) => {
   $("#img-error").hidden = true;
   renderGallery();
   try {
-    const res = await fetch("/api/bild", {
+    const res = await api("/api/bild", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, groesse: $("#img-size").value }),
@@ -547,7 +614,7 @@ $("#img-prompt").addEventListener("keydown", (e) => {
 async function loadStatus() {
   const el = $("#status");
   try {
-    const s = await (await fetch("/api/status")).json();
+    const s = await (await api("/api/status")).json();
     el.innerHTML = s.key_gesetzt
       ? `<span class="dot ok"></span>Verbunden · ${esc(s.chat_modell)}`
       : `<span class="dot"></span>Kein API-Key gesetzt`;
@@ -555,6 +622,13 @@ async function loadStatus() {
     el.innerHTML = `<span class="dot"></span>Server nicht erreichbar`;
   }
 }
+
+/* ---------- User ---------- */
+$("#user-name").textContent = USER.name;
+$("#user-mail").textContent = USER.email;
+const avatar = $("#user-avatar");
+if (USER.bild) avatar.innerHTML = `<img src="${esc(USER.bild)}" alt="" referrerpolicy="no-referrer" />`;
+else avatar.textContent = (USER.name || "?").trim().charAt(0).toUpperCase();
 
 showView("chat");
 loadStatus();
