@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from openai import AsyncOpenAI
+import httpx
+from openai import APIStatusError, AsyncOpenAI
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -26,8 +27,8 @@ for d in (IMAGES_DIR, UPLOADS_DIR):
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 USE_GEMINI = not os.getenv("OPENAI_API_KEY") and bool(os.getenv("GEMINI_API_KEY"))
-CHAT_MODEL = os.getenv("EOTL_CHAT_MODEL", "gemini-2.5-flash" if USE_GEMINI else "gpt-4o")
-IMAGE_MODEL = os.getenv("EOTL_IMAGE_MODEL", "imagen-3.0-generate-002" if USE_GEMINI else "gpt-image-1")
+CHAT_MODEL = os.getenv("EOTL_CHAT_MODEL", "gemini-flash-latest" if USE_GEMINI else "gpt-4o")
+IMAGE_MODEL = os.getenv("EOTL_IMAGE_MODEL", "gemini-2.5-flash-image" if USE_GEMINI else "gpt-image-1")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_UPLOAD_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
@@ -291,9 +292,47 @@ def _to_openai_message(msg: Message) -> dict:
     return {"role": "user", "content": parts}
 
 
+async def _gemini_image(prompt: str, size: str) -> bytes:
+    ratio = {"1536x1024": "3:2", "1024x1536": "2:3"}.get(size, "1:1")
+    async with httpx.AsyncClient(timeout=120) as http:
+        res = await http.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{IMAGE_MODEL}:generateContent",
+            headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": ratio}},
+            },
+        )
+    if res.status_code == 429:
+        raise RuntimeError(
+            "Das Kontingent für Bilder ist aufgebraucht. Beim kostenlosen Gemini-Key ist die "
+            "Bilderstellung nicht enthalten; dafür muss in Google AI Studio die Abrechnung aktiviert werden."
+        )
+    if res.status_code >= 400:
+        raise RuntimeError(res.json().get("error", {}).get("message", res.text)[:300])
+    for cand in res.json().get("candidates", []):
+        for part in cand.get("content", {}).get("parts", []):
+            if "inlineData" in part:
+                return base64.b64decode(part["inlineData"]["data"])
+    raise RuntimeError("Das Modell hat kein Bild zurückgegeben.")
+
+
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, APIStatusError):
+        if exc.status_code == 429:
+            return "Das Anfrage-Limit des API-Keys ist erreicht. Bitte kurz warten und erneut versuchen."
+        if exc.status_code == 503:
+            return "Das KI-Modell ist gerade überlastet. Bitte gleich noch einmal versuchen."
+    return f"Fehler: {exc}"
+
+
 async def generate_image(client: AsyncOpenAI, prompt: str, size: str) -> str:
     if size not in {"1024x1024", "1536x1024", "1024x1536"}:
         size = "1024x1024"
+    name = f"{uuid.uuid4().hex}.png"
+    if IMAGE_MODEL.startswith("gemini"):
+        (IMAGES_DIR / name).write_bytes(await _gemini_image(prompt, size))
+        return f"/bilder/{name}"
     if IMAGE_MODEL.startswith("imagen"):
         result = await client.images.generate(
             model=IMAGE_MODEL, prompt=prompt, response_format="b64_json", n=1
@@ -305,7 +344,6 @@ async def generate_image(client: AsyncOpenAI, prompt: str, size: str) -> str:
         )
     else:
         result = await client.images.generate(model=IMAGE_MODEL, prompt=prompt, size=size)
-    name = f"{uuid.uuid4().hex}.png"
     (IMAGES_DIR / name).write_bytes(base64.b64decode(result.data[0].b64_json))
     return f"/bilder/{name}"
 
@@ -352,7 +390,7 @@ async def chat(req: ChatRequest):
                 url = await generate_image(client, prompt, args.get("groesse", "1024x1024"))
                 yield sse({"type": "image", "url": url, "prompt": prompt})
         except Exception as exc:  # noqa: BLE001
-            yield sse({"type": "error", "text": f"Fehler: {exc}"})
+            yield sse({"type": "error", "text": _error_text(exc)})
         yield sse({"type": "done"})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
@@ -364,7 +402,7 @@ async def image(req: ImageRequest):
     try:
         url = await generate_image(client, req.prompt, req.groesse)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Fehler: {exc}") from exc
+        raise HTTPException(status_code=502, detail=_error_text(exc)) from exc
     return {"url": url, "prompt": req.prompt}
 
 

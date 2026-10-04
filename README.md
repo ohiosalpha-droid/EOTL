@@ -27,6 +27,7 @@ Danach im Browser http://localhost:8000 öffnen.
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `OPENAI_API_KEY` | Dein OpenAI-API-Key | – |
+| `GEMINI_API_KEY` | Kostenlose Alternative, wenn kein OpenAI-Key gesetzt ist (https://aistudio.google.com/apikey). Chat-Modell `gemini-flash-latest`, Bilder mit `gemini-2.5-flash-image` (nur mit aktivierter Abrechnung) | – |
 | `GEMINI_API_KEY` | Alternativ: kostenloser Google-Gemini-Key (aistudio.google.com/apikey), wird genutzt, wenn kein OpenAI-Key gesetzt ist | – |
 | `EOTL_CHAT_MODEL` | Modell für Chat und Code | `gpt-4o` |
 | `EOTL_IMAGE_MODEL` | Modell für Bilder (`gpt-image-1` oder `dall-e-3`) | `gpt-image-1` |
